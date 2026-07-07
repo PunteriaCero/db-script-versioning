@@ -1,0 +1,94 @@
+name: Database Scripts Delta Generator
+description: Generates consolidated delta scripts capturing changes between git refs
+author: camuzziar
+branding:
+  icon: git-branch
+  color: blue
+
+inputs:
+  base_ref:
+    description: Base commit or branch for comparison (origin reference)
+    required: false
+    default: "main"
+  head_ref:
+    description: Head commit or branch for comparison (target reference)
+    required: false
+    default: ${{ github.head_ref || github.ref }}
+  scripts_path:
+    description: Relative path to scripts folder
+    required: false
+    default: "scripts"
+
+outputs:
+  delta_file:
+    description: Path to generated SQL delta file
+    value: ${{ steps.generate_delta.outputs.delta_file }}
+  has_changes:
+    description: Whether changes were detected in scripts folder
+    value: ${{ steps.changed_files.outputs.has_changes }}
+  changed_files:
+    description: List of modified files in scripts folder
+    value: ${{ steps.changed_files.outputs.changed_files }}
+
+runs:
+  using: composite
+  steps:
+    - name: Detect changes
+      id: changed_files
+      shell: bash
+      run: |
+        BASE_REF="${{ inputs.base_ref }}"
+        HEAD_REF="${{ inputs.head_ref }}"
+        SCRIPTS_PATH="${{ inputs.scripts_path }}"
+        
+        git fetch origin "$BASE_REF" 2>/dev/null || true
+        
+        CHANGED=$(git diff --name-only "origin/$BASE_REF".."$HEAD_REF" -- "$SCRIPTS_PATH"/ 2>/dev/null || echo "")
+        
+        if [ -z "$CHANGED" ]; then
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+          echo "changed_files=" >> $GITHUB_OUTPUT
+        else
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGED" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Generate delta
+      if: steps.changed_files.outputs.has_changes == 'true'
+      id: generate_delta
+      shell: bash
+      run: |
+        BASE_REF="origin/${{ inputs.base_ref }}"
+        HEAD_REF="HEAD"
+        CHANGED_FILES="${{ steps.changed_files.outputs.changed_files }}"
+        DELTA_FILE="scripts-delta-$(date +%Y%m%d-%H%M%S).sql"
+        TEMP_FILE=$(mktemp)
+        
+        echo "-- Database Scripts Delta" >> "$TEMP_FILE"
+        echo "-- Generated: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> "$TEMP_FILE"
+        echo "-- Base: $(git rev-parse $BASE_REF | cut -c1-7)" >> "$TEMP_FILE"
+        echo "-- Head: $(git rev-parse $HEAD_REF | cut -c1-7)" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+        
+        while IFS= read -r file; do
+          if [ -n "$file" ]; then
+            echo "-- FILE: $file" >> "$TEMP_FILE"
+            echo "-- ========================================" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+            
+            # Use git show to capture full file content (works for new & modified files)
+            if git show "$HEAD_REF:$file" >> "$TEMP_FILE" 2>/dev/null; then
+              :
+            else
+              # Fallback: git diff for edge cases
+              git diff "$BASE_REF".."$HEAD_REF" -- "$file" 2>/dev/null | grep "^+" | grep -v "^+++" | sed "s/^+//" >> "$TEMP_FILE" || true
+            fi
+            
+            echo "" >> "$TEMP_FILE"
+          fi
+        done <<< "$CHANGED_FILES"
+        
+        mv "$TEMP_FILE" "$DELTA_FILE"
+        echo "delta_file=$DELTA_FILE" >> $GITHUB_OUTPUT
