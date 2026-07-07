@@ -38,7 +38,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.ref }}
       
-      - uses: camuzziar/db-script-versioning@v1
+      - uses: punteriacero/db-script-versioning@v1
         id: delta
         with:
           base_ref: main
