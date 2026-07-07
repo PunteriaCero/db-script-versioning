@@ -1,0 +1,83 @@
+name: Test Delta Generator
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: Base reference (branch/tag)
+        required: true
+        default: 'main'
+      head_ref:
+        description: Head reference (branch/tag/commit)
+        required: true
+        default: 'HEAD'
+
+jobs:
+  test-delta:
+    name: Generate and Validate Delta
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.head_ref }}
+      
+      - name: Ensure base branch exists locally
+        run: |
+          git fetch origin ${{ inputs.base_ref }}:${{ inputs.base_ref }} 2>/dev/null || \
+          git fetch origin ${{ inputs.base_ref }} || true
+      
+      - name: Generate delta using action
+        id: delta
+        uses: ./
+        with:
+          base_ref: ${{ inputs.base_ref }}
+          head_ref: ${{ inputs.head_ref }}
+          scripts_path: scripts
+      
+      - name: Display delta file info
+        run: |
+          echo "=== Delta Generation Results ==="
+          echo "Has Changes: ${{ steps.delta.outputs.has_changes }}"
+          echo "Changed Files:"
+          echo "${{ steps.delta.outputs.changed_files }}"
+          
+          if [ "${{ steps.delta.outputs.has_changes }}" == "true" ]; then
+            echo ""
+            echo "=== Delta File Content ==="
+            echo "File: ${{ steps.delta.outputs.delta_file }}"
+            ls -lh ${{ steps.delta.outputs.delta_file }}
+            echo ""
+            echo "--- Preview (first 50 lines) ---"
+            head -50 ${{ steps.delta.outputs.delta_file }}
+          else
+            echo "No changes detected in scripts folder"
+          fi
+      
+      - name: Upload delta artifact
+        if: steps.delta.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-delta
+          path: ${{ steps.delta.outputs.delta_file }}
+          retention-days: 7
+      
+      - name: Summary
+        run: |
+          echo "## Delta Generation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Base Reference:** \`${{ inputs.base_ref }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Head Reference:** \`${{ inputs.head_ref }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Has Changes:** ${{ steps.delta.outputs.has_changes }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.delta.outputs.has_changes }}" == "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Changed Files:**" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "${{ steps.delta.outputs.changed_files }}" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Delta file generated: \`${{ steps.delta.outputs.delta_file }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
