@@ -8,12 +8,10 @@ branding:
 inputs:
   base_ref:
     description: Base commit or branch for comparison (origin reference)
-    required: false
-    default: "main"
+    required: true
   head_ref:
     description: Head commit or branch for comparison (target reference)
-    required: false
-    default: ${{ github.head_ref || github.ref }}
+    required: true
   scripts_path:
     description: Relative path to scripts folder
     required: false
@@ -33,12 +31,18 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.head_ref }}
+        fetch-depth: 0
+
     - name: Detect changes
       id: changed_files
       shell: bash
       run: |
         BASE_REF="${{ inputs.base_ref }}"
-        HEAD_REF="${{ inputs.head_ref }}"
+        HEAD_REF="HEAD"
         SCRIPTS_PATH="${{ inputs.scripts_path }}"
         
         git fetch origin "$BASE_REF" 2>/dev/null || true
