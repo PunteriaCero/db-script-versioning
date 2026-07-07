@@ -35,7 +35,7 @@ runs:
       uses: actions/checkout@v4
       with:
         ref: ${{ inputs.head_ref }}
-        fetch-depth: 0
+        fetch-depth: 0 # Fetch full history to allow diffing with base_ref
 
     - name: Detect changes
       id: changed_files
