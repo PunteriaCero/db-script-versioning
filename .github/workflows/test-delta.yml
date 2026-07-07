@@ -6,11 +6,11 @@ on:
       base_ref:
         description: Base reference (branch/tag)
         required: true
-        default: 'main'
+        default: 'base'
       head_ref:
         description: Head reference (branch/tag/commit)
         required: true
-        default: 'HEAD'
+        default: 'v1'
 
 jobs:
   test-delta:
